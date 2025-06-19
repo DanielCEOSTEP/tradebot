@@ -191,7 +191,8 @@ class ArbitrageBot:
         await self.refresh_balance()
         await self.paradex.ws_client.connect()
         # Subscribe to order book snapshot channel with desired depth
-        book_channel = f"order_book_snapshot.{self.cfg['market']}.50"
+        # Depth 15 is the maximum allowed per Paradex websocket API
+        book_channel = f"order_book_snapshot.{self.cfg['market']}.15"
         self.paradex.ws_client.callbacks[book_channel] = self.on_order_book
         await self.paradex.ws_client._subscribe_to_channel_by_name(book_channel)
         while not self.paradex.ws_client.subscribed_channels.get(book_channel):
