@@ -118,6 +118,9 @@ class ArbitrageBot:
     async def on_order_book(self, _channel, message) -> None:
         self.logger.debug("Order book message: %s", message)
         data = message.get("params", {}).get("data", {})
+        # Display the full snapshot/update payload to verify we are receiving
+        # data from the fast order book channel
+        print("ORDER_BOOK:", data)
         bids = data.get("bids")
         asks = data.get("asks")
 
