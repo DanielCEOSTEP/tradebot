@@ -182,7 +182,7 @@ class ArbitrageBot:
         await self.paradex.ws_client.subscribe(
             ParadexWebsocketChannel.ORDER_BOOK,
             self.on_order_book,
-            params={"market": self.cfg["market"], "price_tick": "l2", "refresh_rate": "100ms"},
+            params={"market": self.cfg["market"], "price_tick": "l2", "refresh_rate": "50ms"},
         )
         await self.paradex.ws_client.subscribe(
             ParadexWebsocketChannel.ACCOUNT,
