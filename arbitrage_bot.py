@@ -205,17 +205,13 @@ class ArbitrageBot:
         # Subscribe to the order book snapshot channel with the same pattern as
         # used in ``paradex_bot.py``. This channel streams updates every 50ms
         # with a depth of 15 levels.
-        book_params = {
-            "market": self.cfg["market"],
-            "price_tick": "snapshot@15",
-            "refresh_rate": "50ms",
-        }
-        await self.paradex.ws_client.subscribe(
-            ParadexWebsocketChannel.ORDER_BOOK,
-            self.on_order_book,
-            params=book_params,
-        )
-        book_channel = ParadexWebsocketChannel.ORDER_BOOK.value.format(**book_params)
+        # The SDK expects ``order_book.{market}.snapshot@15@50ms`` for the
+        # fast snapshot channel. The enum value in ``paradex_py`` uses a dot
+        # before the refresh rate which does not work for this channel, so
+        # subscribe manually using the expected string.
+        book_channel = f"order_book.{self.cfg['market']}.snapshot@15@50ms"
+        self.paradex.ws_client.callbacks[book_channel] = self.on_order_book
+        await self.paradex.ws_client._subscribe_to_channel_by_name(book_channel)
         while not self.paradex.ws_client.subscribed_channels.get(book_channel):
             await asyncio.sleep(0.1)
         self.logger.info("Subscription acknowledged: %s", book_channel)
