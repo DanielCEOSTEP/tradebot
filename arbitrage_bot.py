@@ -4,6 +4,7 @@ import os
 from decimal import Decimal
 from uuid import uuid4
 from typing import Dict, Optional
+from datetime import datetime
 
 import tomli
 import yaml
@@ -126,14 +127,22 @@ class ArbitrageBot:
         profit = delta * order_size - fees
         if profit < self.cfg["min_profit_usd"]:
             return
+
+        signal = (
+            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY {order_size:.2f}@{self.best_ask} "
+            f"\u2192 SELL@{self.best_bid}  \u0394={delta:.2f}  Net={profit:.2f}"
+        )
+        self.logger.info(signal)
+
         await self.refresh_balance()
         usd_needed = self.best_ask * order_size
         if usd_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
-            self.logger.warning("Insufficient balance for order pair")
+            self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
             return
         if len(self.open_batches) >= self.cfg["max_open_orders"]:
             self.logger.warning("Max open orders reached")
             return
+        self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
         await self.place_orders(self.best_ask, self.best_bid, order_size)
 
     async def place_orders(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
@@ -162,10 +171,9 @@ class ArbitrageBot:
             self.paradex.api_client.submit_orders_batch(orders)
             self.open_batches[batch_id] = {"buy": orders[0].client_id, "sell": orders[1].client_id}
             self.logger.info(
-                "Placed orders BUY %s @ %s, SELL %s @ %s",
+                "\u0420\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u044b \u043e\u0440\u0434\u0435\u0440\u0430: BUY %s @ %s \u2192 SELL @ %s",
                 size,
                 price_buy,
-                size,
                 price_sell,
             )
         except Exception as exc:
@@ -204,6 +212,7 @@ async def amain(config_path: Optional[str] = None) -> None:
         level=getattr(logging, cfg["log_level"].upper()),
         format="%(asctime)s %(levelname)s: %(message)s",
     )
+    logging.getLogger("paradex_py").setLevel(logging.WARNING)
     bot = ArbitrageBot(cfg)
     await bot.run()
 
