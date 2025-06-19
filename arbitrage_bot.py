@@ -127,9 +127,11 @@ class ArbitrageBot:
             self.best_ask = Decimal(asks[0][0])
             self.best_ask_qty = Decimal(asks[0][1])
             await self.check_inversion()
-            return
 
         inserts = data.get("inserts", [])
+        if inserts:
+            await self.scan_inversions(inserts)
+
         for entry in inserts:
             try:
                 price = Decimal(entry["price"])
@@ -180,6 +182,49 @@ class ArbitrageBot:
             return
         self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
         await self.place_orders(self.best_ask, self.best_bid, order_size)
+
+    async def scan_inversions(self, inserts) -> None:
+        bids = []
+        asks = []
+        for entry in inserts:
+            try:
+                price = Decimal(entry["price"])
+                size = Decimal(entry["size"])
+                side = entry["side"]
+            except (KeyError, TypeError, decimal.InvalidOperation):
+                continue
+            if side == "BUY":
+                bids.append((size, price))
+            elif side == "SELL":
+                asks.append((size, price))
+        for q_b, p_b in bids:
+            for q_a, p_a in asks:
+                if q_b != q_a or p_a <= p_b:
+                    continue
+                gross = (p_a - p_b) * q_b
+                fees = (p_b * q_b + p_a * q_a) * self.cfg.get("fee_pct", Decimal("0"))
+                net = gross - fees
+                if net >= self.cfg.get("min_profit_usd", Decimal("0")):
+                    signal = (
+                        f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY {q_b:.2f}@{p_b} "
+                        f"\u2192 SELL@{p_a}  \u0394={p_a - p_b:.2f}  Net={net:.2f}"
+                    )
+                    print(signal)
+                    await self.handle_order(p_b, p_a, q_b)
+
+    async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
+        await self.refresh_balance()
+        if "order_size" in self.cfg:
+            size = min(size, self.cfg["order_size"])
+        usd_needed = price_buy * size
+        if usd_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
+            self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
+            return
+        if len(self.open_batches) >= self.cfg["max_open_orders"]:
+            self.logger.warning("Max open orders reached")
+            return
+        self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
+        await self.place_orders(price_buy, price_sell, size)
 
     async def place_orders(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         batch_id = str(uuid4())
