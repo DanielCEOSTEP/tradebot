@@ -8,6 +8,7 @@ from datetime import datetime
 
 import tomli
 import yaml
+import decimal
 from dotenv import load_dotenv
 
 from paradex_py.paradex import Paradex
@@ -119,13 +120,33 @@ class ArbitrageBot:
         data = message.get("params", {}).get("data", {})
         bids = data.get("bids")
         asks = data.get("asks")
-        if not bids or not asks:
+
+        if bids and asks:
+            self.best_bid = Decimal(bids[0][0])
+            self.best_bid_qty = Decimal(bids[0][1])
+            self.best_ask = Decimal(asks[0][0])
+            self.best_ask_qty = Decimal(asks[0][1])
+            await self.check_inversion()
             return
-        self.best_bid = Decimal(bids[0][0])
-        self.best_bid_qty = Decimal(bids[0][1])
-        self.best_ask = Decimal(asks[0][0])
-        self.best_ask_qty = Decimal(asks[0][1])
-        await self.check_inversion()
+
+        inserts = data.get("inserts", [])
+        for entry in inserts:
+            try:
+                price = Decimal(entry["price"])
+                size = Decimal(entry["size"])
+                side = entry["side"]
+            except (KeyError, TypeError, decimal.InvalidOperation):
+                continue
+
+            if side == "BUY" and (self.best_bid is None or price > self.best_bid):
+                self.best_bid = price
+                self.best_bid_qty = size
+            elif side == "SELL" and (self.best_ask is None or price < self.best_ask):
+                self.best_ask = price
+                self.best_ask_qty = size
+
+        if self.best_bid is not None and self.best_ask is not None:
+            await self.check_inversion()
 
     async def check_inversion(self) -> None:
         if self.best_bid is None or self.best_ask is None:
