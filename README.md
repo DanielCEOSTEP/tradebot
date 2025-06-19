@@ -14,6 +14,12 @@ PARADEX_L1_PRIVATE_KEY=...
 PARADEX_L2_PRIVATE_KEY=...
 ```
 
+### Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
 ### Example usage
 
 ```bash

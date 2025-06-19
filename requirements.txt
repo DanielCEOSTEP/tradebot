@@ -1,0 +1,4 @@
+paradex_py
+python-dotenv
+tomli
+pyyaml
