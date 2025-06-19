@@ -62,6 +62,11 @@ def main() -> None:
         l2_private_key=cfg["l2_private_key"],
     )
 
+    markets = paradex.api_client.fetch_markets()
+    symbols = {m["symbol"] for m in markets.get("results", [])}
+    if args.market not in symbols:
+        raise SystemExit(f"Unknown market symbol: {args.market}")
+
     order = Order(
         market=args.market,
         order_type=OrderType[args.type.title()],

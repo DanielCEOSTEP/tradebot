@@ -17,7 +17,10 @@ PARADEX_L2_PRIVATE_KEY=...
 ### Example usage
 
 ```bash
-python place_order.py ETH-USD BUY LIMIT 0.01 --price 3500
+python place_order.py ETH-USD-PERP BUY LIMIT 0.01 --price 3500
 ```
+
+Use a valid market symbol (e.g. `ETH-USD-PERP`). You can retrieve the
+available markets via `paradex_cli markets`.
 
 Pass `--help` to see all options.
