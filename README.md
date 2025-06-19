@@ -24,3 +24,14 @@ Use a valid market symbol (e.g. `ETH-USD-PERP`). You can retrieve the
 available markets via `paradex_cli markets`.
 
 Pass `--help` to see all options.
+
+### Testing
+
+Run unit tests locally with `pytest`:
+
+```bash
+pytest -v
+```
+
+Tests are also executed automatically on GitHub via the workflow in
+`.github/workflows/ci.yml`.
