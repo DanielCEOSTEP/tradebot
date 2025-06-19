@@ -30,3 +30,9 @@ Use a valid market symbol (e.g. `ETH-USD-PERP`). You can retrieve the
 available markets via `paradex_cli markets`.
 
 Pass `--help` to see all options.
+
+### Troubleshooting
+
+Set the `PARADEX_LOG_LEVEL` environment variable to `DEBUG` to see detailed
+log output from both the bots and the SDK. This can help diagnose connection
+or order placement issues.

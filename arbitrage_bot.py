@@ -103,6 +103,7 @@ class ArbitrageBot:
                 self.logger.info("Order %s %s", client_id, status)
 
     async def on_order_book(self, _channel, message) -> None:
+        self.logger.debug("Order book message: %s", message)
         data = message.get("params", {}).get("data", {})
         bids = data.get("bids")
         asks = data.get("asks")
