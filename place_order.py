@@ -21,9 +21,14 @@ def load_config():
     }
     missing = [k for k in ["l1_address"] if not config[k]]
     if missing:
-        raise SystemExit(f"Missing required config variables: {', '.join(missing)}")
+        missing_str = ", ".join(missing)
+        raise SystemExit(
+            f"Missing required config variables: {missing_str}"
+        )
     if not config["l1_private_key"] and not config["l2_private_key"]:
-        raise SystemExit("Provide PARADEX_L1_PRIVATE_KEY or PARADEX_L2_PRIVATE_KEY")
+        raise SystemExit(
+            "Provide PARADEX_L1_PRIVATE_KEY or PARADEX_L2_PRIVATE_KEY"
+        )
     return config
 
 
@@ -34,7 +39,11 @@ def parse_args():
     parser.add_argument("type", choices=["LIMIT", "MARKET"], help="Order type")
     parser.add_argument("size", type=Decimal, help="Order size")
     parser.add_argument("--price", type=Decimal, help="Limit price")
-    parser.add_argument("--client-id", default=str(uuid4()), help="Client order id")
+    parser.add_argument(
+        "--client-id",
+        default=str(uuid4()),
+        help="Client order id",
+    )
     return parser.parse_args()
 
 
