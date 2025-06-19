@@ -190,11 +190,20 @@ class ArbitrageBot:
     async def run(self) -> None:
         await self.refresh_balance()
         await self.paradex.ws_client.connect()
-        # Subscribe to order book snapshot channel with desired depth
-        # Depth 15 is the maximum allowed per Paradex websocket API
-        book_channel = f"order_book_snapshot.{self.cfg['market']}.15"
-        self.paradex.ws_client.callbacks[book_channel] = self.on_order_book
-        await self.paradex.ws_client._subscribe_to_channel_by_name(book_channel)
+        # Subscribe to the order book snapshot channel with the same pattern as
+        # used in ``paradex_bot.py``. This channel streams updates every 50ms
+        # with a depth of 15 levels.
+        book_params = {
+            "market": self.cfg["market"],
+            "price_tick": "snapshot@15",
+            "refresh_rate": "50ms",
+        }
+        await self.paradex.ws_client.subscribe(
+            ParadexWebsocketChannel.ORDER_BOOK,
+            self.on_order_book,
+            params=book_params,
+        )
+        book_channel = ParadexWebsocketChannel.ORDER_BOOK.value.format(**book_params)
         while not self.paradex.ws_client.subscribed_channels.get(book_channel):
             await asyncio.sleep(0.1)
         self.logger.info("Subscription acknowledged: %s", book_channel)
