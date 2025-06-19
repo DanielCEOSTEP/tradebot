@@ -85,7 +85,9 @@ class ArbitrageBot:
         self.open_batches: Dict[str, Dict[str, str]] = {}
 
     async def refresh_balance(self) -> None:
-        summary = self.paradex.api_client.fetch_account_summary()
+        summary = await asyncio.to_thread(
+            self.paradex.api_client.fetch_account_summary
+        )
         if getattr(summary, "free_collateral", None):
             self.available_balance_usd = Decimal(summary.free_collateral)
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
