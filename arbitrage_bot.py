@@ -23,6 +23,8 @@ ENV_MAP = {
     "PARADEX_ORDER_SIZE": "order_size",  # optional max order size
     "PARADEX_MIN_PROFIT_USD": "min_profit_usd",
     "PARADEX_FEE_PCT": "fee_pct",
+    "PARADEX_TAKER_FEE_PCT": "taker_fee_pct",
+    "PARADEX_MAKER_FEE_PCT": "maker_fee_pct",
     "PARADEX_MAX_OPEN_ORDERS": "max_open_orders",
     "PARADEX_BALANCE_RESERVED_PCT": "balance_reserved_pct",
     "PARADEX_POLL_INTERVAL_MS": "poll_interval_ms",
@@ -46,7 +48,13 @@ def load_config(config_path: Optional[str] = None) -> Dict:
         if os.getenv(env) is not None:
             cfg[key] = os.getenv(env)
     cfg.setdefault("env", "testnet")
-    for k in ["order_size", "min_profit_usd", "fee_pct"]:
+    for k in [
+        "order_size",
+        "min_profit_usd",
+        "fee_pct",
+        "taker_fee_pct",
+        "maker_fee_pct",
+    ]:
         if k in cfg:
             cfg[k] = Decimal(cfg[k])
     cfg["max_open_orders"] = int(cfg.get("max_open_orders", 1))
@@ -54,6 +62,8 @@ def load_config(config_path: Optional[str] = None) -> Dict:
     cfg["poll_interval_ms"] = int(cfg.get("poll_interval_ms", 1000))
     cfg["balance_refresh_sec"] = int(cfg.get("balance_refresh_sec", 30))
     cfg.setdefault("min_profit_usd", Decimal("1"))
+    cfg.setdefault("taker_fee_pct", Decimal("0.0002"))
+    cfg.setdefault("maker_fee_pct", Decimal("-0.0001"))
     cfg.setdefault("fee_pct", Decimal("0.001"))
     cfg.setdefault("log_level", "INFO")
     required = ["l1_address", "market"]
@@ -126,7 +136,9 @@ class ArbitrageBot:
         if "order_size" in self.cfg:
             order_size = min(order_size, self.cfg["order_size"])
         delta = self.best_bid - self.best_ask
-        fees = (self.best_bid + self.best_ask) * order_size * self.cfg["fee_pct"]
+        taker_fee = self.best_ask * order_size * self.cfg["taker_fee_pct"]
+        maker_fee = self.best_bid * order_size * self.cfg["maker_fee_pct"]
+        fees = taker_fee + maker_fee
         profit = delta * order_size - fees
         if profit < self.cfg["min_profit_usd"]:
             return
