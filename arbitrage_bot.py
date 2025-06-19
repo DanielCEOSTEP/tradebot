@@ -147,7 +147,7 @@ class ArbitrageBot:
             f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY {order_size:.2f}@{self.best_ask} "
             f"\u2192 SELL@{self.best_bid}  \u0394={delta:.2f}  Net={profit:.2f}"
         )
-        self.logger.info(signal)
+        print(signal)
 
         await self.refresh_balance()
         usd_needed = self.best_ask * order_size
