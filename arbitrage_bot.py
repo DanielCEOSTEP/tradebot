@@ -187,11 +187,13 @@ class ArbitrageBot:
     async def run(self) -> None:
         await self.refresh_balance()
         await self.paradex.ws_client.connect()
-        await self.paradex.ws_client.subscribe(
-            ParadexWebsocketChannel.ORDER_BOOK,
-            self.on_order_book,
-            params={"market": self.cfg["market"], "price_tick": "l2", "refresh_rate": "50ms"},
-        )
+        # Subscribe to order book snapshot channel with desired depth
+        book_channel = f"order_book_snapshot.{self.cfg['market']}.50"
+        self.paradex.ws_client.callbacks[book_channel] = self.on_order_book
+        await self.paradex.ws_client._subscribe_to_channel_by_name(book_channel)
+        while not self.paradex.ws_client.subscribed_channels.get(book_channel):
+            await asyncio.sleep(0.1)
+        self.logger.info("Subscription acknowledged: %s", book_channel)
         await self.paradex.ws_client.subscribe(
             ParadexWebsocketChannel.ACCOUNT,
             self.on_account_update,
