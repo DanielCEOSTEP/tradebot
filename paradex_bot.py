@@ -1,86 +1,139 @@
-import argparse
-import logging
-import os
-from decimal import Decimal
-from uuid import uuid4
+#!/usr/bin/env python3
+"""
+Paradex proto-bot:
+ • берёт свежий JWT (jwt_util.get_jwt)
+ • WS-авторизация  → подписка на order_book + account
+ • вывод free_collateral и простейший спред-сканер
+"""
 
-from dotenv import load_dotenv
+import json, time, decimal, os, websocket
+from jwt_util import get_jwt
 
-from paradex_py.paradex import Paradex
-from paradex_py.common.order import Order, OrderSide, OrderType
+# ─────────────────────── конфигурация ───────────────────────
+ENV            = os.getenv("PARADEX_ENV", "prod")       # "prod" | "testnet"
+WS_URL         = f"wss://ws.api.{ENV}.paradex.trade/v1"
 
+MARKET         = "ETH-USD-PERP"
+REFRESH_RATE   = "50ms"                                 # 15 ур., 50 мс
+COMM_RATE      = decimal.Decimal("0.0005")              # 0.05 %
+PROFIT_MIN_USD = decimal.Decimal("1")
 
+JWT_TOKEN      = get_jwt()
+TOKEN_TTL      = 60 * 25                                # 25 мин до обновления
 
-def load_config():
-    """Load configuration from environment or .env file."""
-    load_dotenv()
-    config = {
-        "env": os.getenv("PARADEX_ENV", "testnet"),
-        "l1_address": os.getenv("PARADEX_L1_ADDRESS"),
-        "l1_private_key": os.getenv("PARADEX_L1_PRIVATE_KEY"),
-        "l2_private_key": os.getenv("PARADEX_L2_PRIVATE_KEY"),
-    }
-    missing = [k for k in ["l1_address"] if not config[k]]
-    if missing:
-        missing_str = ", ".join(missing)
-        raise SystemExit(
-            f"Missing required config variables: {missing_str}"
-        )
-    if not config["l1_private_key"] and not config["l2_private_key"]:
-        raise SystemExit(
-            "Provide PARADEX_L1_PRIVATE_KEY or PARADEX_L2_PRIVATE_KEY"
-        )
-    return config
+OB_CHANNEL     = f"order_book.{MARKET}.snapshot@15@{REFRESH_RATE}"
 
+# ───────────────────────-- helpers ───────────────────────
+_msg_id = 0
+def next_id() -> int:
+    global _msg_id
+    _msg_id += 1
+    return _msg_id
 
+def now(): return time.strftime("%H:%M:%S")
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Place order on Paradex")
-    parser.add_argument("market", help="Market symbol, e.g. ETH-USD")
-    parser.add_argument("side", choices=["BUY", "SELL"], help="Order side")
-    parser.add_argument("type", choices=["LIMIT", "MARKET"], help="Order type")
-    parser.add_argument("size", type=Decimal, help="Order size")
-    parser.add_argument("--price", type=Decimal, help="Limit price")
-    parser.add_argument(
-        "--client-id",
-        default=str(uuid4()),
-        help="Client order id",
-    )
-    return parser.parse_args()
+def log(*a, **k): print(now(), *a, **k)
 
+# ───────────────────────-- WS callbacks ───────────────────────
+AUTH_REQ_ID = None      # запомним id auth-сообщения
 
+def on_open(ws):
+    global AUTH_REQ_ID
+    log("▶ WS connected → sending auth …")
+    AUTH_REQ_ID = next_id()
+    ws.send(json.dumps({
+        "jsonrpc": "2.0",
+        "method": "auth",
+        "params": {"bearer": JWT_TOKEN},
+        "id": AUTH_REQ_ID,
+    }))
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    args = parse_args()
-    cfg = load_config()
+def subscribe_private_and_public(ws):
+    for ch in (OB_CHANNEL, "account"):
+        ws.send(json.dumps({
+            "jsonrpc": "2.0",
+            "method": "subscribe",
+            "params": {"channel": ch},
+            "id": next_id(),
+        }))
+    log(f"✅ Subscribed: {OB_CHANNEL}  &  account")
 
-    if args.type == "LIMIT" and args.price is None:
-        raise SystemExit("Limit orders require --price")
+def on_message(ws, message):
+    msg = json.loads(message)
 
-    paradex = Paradex(
-        env=cfg["env"],
-        l1_address=cfg["l1_address"],
-        l1_private_key=cfg["l1_private_key"],
-        l2_private_key=cfg["l2_private_key"],
-    )
+    # DEBUG: покажем всё, что пришло (раскомментируйте при необходимости)
+    # print("RAW:", msg)
 
-    order = Order(
-        market=args.market,
-        order_type=OrderType[args.type.title()],
-        order_side=OrderSide[args.side.title()],
-        size=args.size,
-        limit_price=args.price or Decimal(0),
-        client_id=args.client_id,
-    )
+    # 1) Обработка ответа на auth
+    if msg.get("id") == AUTH_REQ_ID:
+        if "result" in msg:           # успех: server отвечает {"result":{}}
+            log("✅ Auth success")
+            subscribe_private_and_public(ws)
+        else:                         # ошибка авторизации
+            log("❌ Auth failure:", msg)
+            ws.close()
+        return
 
-    try:
-        result = paradex.api_client.submit_order(order)
-        logging.info("Order placed successfully: %s", result)
-    except Exception as exc:
-        logging.error("Failed to place order: %s", exc)
+    # 2) Ошибки без id (например, подписка без auth)
+    if "error" in msg:
+        log("❌ Server error:", msg["error"])
+        return
 
+    # 3) Интересуют только push-уведомления
+    if msg.get("method") != "subscription":
+        return
 
+    chan   = msg["params"]["channel"]
+    data   = msg["params"]["data"]
+
+    # 3-a) account → баланс
+    if chan == "account":
+        fc = decimal.Decimal(data["free_collateral"])
+        log(f"💰  Free collateral: {fc} {data['settlement_asset']}")
+        return
+
+    # 3-b) order-book
+    if chan != OB_CHANNEL:
+        return
+
+    bids = [(decimal.Decimal(o["size"]), decimal.Decimal(o["price"]))
+            for o in data.get("inserts", []) if o["side"] == "BUY"]
+    asks = [(decimal.Decimal(o["size"]), decimal.Decimal(o["price"]))
+            for o in data.get("inserts", []) if o["side"] == "SELL"]
+
+    for q_b, p_b in bids:
+        for q_a, p_a in asks:
+            if q_b != q_a or p_a <= p_b:
+                continue
+            gross = (p_a - p_b) * q_b
+            fees  = (p_b * q_b + p_a * q_a) * COMM_RATE
+            net   = gross - fees
+            if net > PROFIT_MIN_USD:
+                log(f"🚀  BUY {q_b}@{p_b} → SELL@{p_a}  "
+                    f"Δ={p_a - p_b:.2f}  Net={net:.2f}")
+
+def on_error(ws, err):   log("✖ WS error:", err)
+def on_close(ws, c, r):  log(f"✖ WS closed: {c} / {r}")
+
+# ───────────────────────-- main loop ───────────────────────
 if __name__ == "__main__":
-    main()
+    next_token_at = time.time() + TOKEN_TTL
 
+    while True:
+        ws = websocket.WebSocketApp(
+            WS_URL,
+            on_open   = on_open,
+            on_message= on_message,
+            on_error  = on_error,
+            on_close  = on_close,
+        )
+        # держим соединение; run_forever вернёт управление после закрытия
+        ws.run_forever(ping_interval=20, ping_timeout=10)
+
+        # ♦ если здесь — значит соединение упало; проверяем, пора ли обновлять JWT
+        if time.time() >= next_token_at:
+            log("🔄  Refreshing JWT …")
+            JWT_TOKEN = get_jwt()
+            next_token_at = time.time() + TOKEN_TTL
+
+        time.sleep(2)    # небольшая пауза перед реконнектом
