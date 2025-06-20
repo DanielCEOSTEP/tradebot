@@ -163,3 +163,22 @@ async def test_check_inversion_short_direction(bot, monkeypatch):
     bot.cfg["maker_fee_pct"] = Decimal("0.0002")
     await bot.check_inversion()
     assert placed["order"][3] == "short"
+
+
+def test_scan_full_book(monkeypatch, bot):
+    captured = {}
+
+    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
+        captured["order"] = (ask_price, bid_price, size, direction)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    bot.cfg["min_profit"] = Decimal("1")
+    bids = [["102", "1"], ["101", "1"]]
+    asks = [["100", "1"], ["99", "1"]]
+    asyncio.run(bot.scan_full_book(bids, asks))
+    assert captured["order"] == (
+        Decimal("100"),
+        Decimal("102"),
+        Decimal("1"),
+        "long",
+    )
