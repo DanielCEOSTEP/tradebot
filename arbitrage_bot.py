@@ -192,7 +192,6 @@ class ArbitrageBot:
             self.best_ask = Decimal(asks[0][0])
             self.best_ask_qty = Decimal(asks[0][1])
             await self.scan_full_book(bids, asks)
-            await self.check_inversion()
 
         inserts = data.get("inserts", [])
         if inserts:
@@ -213,8 +212,7 @@ class ArbitrageBot:
                 self.best_ask = price
                 self.best_ask_qty = size
 
-        if self.best_bid is not None and self.best_ask is not None:
-            await self.check_inversion()
+
 
     async def scan_full_book(self, bids, asks) -> None:
         """Scan the entire order book for price inversions."""
@@ -261,66 +259,6 @@ class ArbitrageBot:
                     )
                     return
 
-    async def check_inversion(self) -> None:
-        await self.refresh_positions()
-        if self.best_bid is None or self.best_ask is None:
-            return
-        if self.best_bid_qty is None or self.best_ask_qty is None:
-            return
-        if self.has_open_position:
-            if self.open_position_price is not None:
-                self.logger.info(
-                    "Open position at %s, skipping new orders",
-                    self.open_position_price,
-                )
-            else:
-                self.logger.info("Open position detected, skipping new orders")
-            return
-        order_size = min(self.best_bid_qty, self.best_ask_qty)
-        if "order_size" in self.cfg:
-            order_size = min(order_size, self.cfg["order_size"])
-        delta = self.best_bid - self.best_ask
-        long_profit = delta * order_size - (
-            self.best_ask * order_size * self.cfg["taker_fee_pct"]
-            + self.best_bid * order_size * self.cfg["maker_fee_pct"]
-        )
-        short_profit = delta * order_size - (
-            self.best_bid * order_size * self.cfg["taker_fee_pct"]
-            + self.best_ask * order_size * self.cfg["maker_fee_pct"]
-        )
-
-        if long_profit >= short_profit and long_profit >= self.cfg["min_profit_usd"]:
-            direction = "long"
-            profit = long_profit
-        elif short_profit >= self.cfg["min_profit_usd"]:
-            direction = "short"
-            profit = short_profit
-        else:
-            return
-
-        signal = (
-            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  {direction.upper()} "
-            f"{order_size:.2f}@{self.best_ask if direction=='long' else self.best_bid} "
-            f"\u2192 {'SELL' if direction=='long' else 'BUY'}@{self.best_bid if direction=='long' else self.best_ask}  "
-            f"\u0394={delta:.2f}  Net={profit:.2f}"
-        )
-        print(signal)
-
-        await self.refresh_balance()
-        leverage = self.cfg.get("leverage", Decimal("1"))
-        first_price = self.best_ask if direction == "long" else self.best_bid
-        margin_needed = (first_price * order_size) / leverage
-        if margin_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
-            self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
-            return
-        if len(self.open_batches) >= self.cfg["max_open_orders"]:
-            self.logger.warning("Max open orders reached")
-            return
-        self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
-        if direction == "short":
-            await self.place_orders(self.best_bid, self.best_ask, order_size, direction)
-        else:
-            await self.place_orders(self.best_ask, self.best_bid, order_size, direction)
 
     async def scan_inversions(self, inserts) -> None:
         """Check for simple two-order cross spreads regardless of order."""
