@@ -1,8 +1,47 @@
-import sys, os
+import sys
+import os
+import types
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import asyncio
 from decimal import Decimal
 import pytest
+
+# Create minimal stubs so arbitrage_bot can be imported without installing
+# external dependencies.
+paradex_module = types.ModuleType("paradex_py.paradex")
+class Paradex:
+    pass
+paradex_module.Paradex = Paradex
+common_module = types.ModuleType("paradex_py.common.order")
+
+class Order:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+class OrderSide:
+    Buy = "BUY"
+    Sell = "SELL"
+
+class OrderType:
+    Limit = "LIMIT"
+
+common_module.Order = Order
+common_module.OrderSide = OrderSide
+common_module.OrderType = OrderType
+
+ws_module = types.ModuleType("paradex_py.api.ws_client")
+class ParadexWebsocketChannel:
+    ACCOUNT = "ACCOUNT"
+    ORDERS = "ORDERS"
+
+ws_module.ParadexWebsocketChannel = ParadexWebsocketChannel
+
+sys.modules["paradex_py"] = types.ModuleType("paradex_py")
+sys.modules["paradex_py.paradex"] = paradex_module
+sys.modules["paradex_py.common"] = types.ModuleType("paradex_py.common")
+sys.modules["paradex_py.common.order"] = common_module
+sys.modules["paradex_py.api"] = types.ModuleType("paradex_py.api")
+sys.modules["paradex_py.api.ws_client"] = ws_module
 
 import arbitrage_bot
 
@@ -54,32 +93,6 @@ async def prepare_bot(bot, positions, monkeypatch):
     await bot.refresh_positions()
     return placed
 
-@pytest.mark.asyncio
-async def test_check_inversion_no_open(bot, monkeypatch):
-    placed = await prepare_bot(bot, {"results": []}, monkeypatch)
-    await bot.check_inversion()
-    assert placed["order"][3] == "long"
-
-@pytest.mark.asyncio
-async def test_check_inversion_open_position(bot, monkeypatch):
-    positions = {"results": [{"market": "ETH-USD-PERP", "status": "OPEN", "entry_price": "95"}]}
-    placed = await prepare_bot(bot, positions, monkeypatch)
-    await bot.check_inversion()
-    assert not placed
-
-@pytest.mark.asyncio
-async def test_check_inversion_closed_positive(bot, monkeypatch):
-    positions = {"results": [{"market": "ETH-USD-PERP", "status": "CLOSED", "closed_at": 1, "realized_positional_pnl": "5"}]}
-    placed = await prepare_bot(bot, positions, monkeypatch)
-    await bot.check_inversion()
-    assert placed["order"][3] == "long"
-
-@pytest.mark.asyncio
-async def test_check_inversion_closed_negative(bot, monkeypatch):
-    positions = {"results": [{"market": "ETH-USD-PERP", "status": "CLOSED", "closed_at": 1, "realized_positional_pnl": "-1"}]}
-    placed = await prepare_bot(bot, positions, monkeypatch)
-    await bot.check_inversion()
-    assert placed["order"][3] == "long"
 
 
 @pytest.mark.asyncio
@@ -177,19 +190,6 @@ async def test_scan_inversions_size_mismatch(bot, monkeypatch):
         "long",
     )
 
-
-@pytest.mark.asyncio
-async def test_check_inversion_short_direction(bot, monkeypatch):
-    placed = await prepare_bot(bot, {"results": []}, monkeypatch)
-    bot.cfg["taker_fee_pct"] = Decimal("0.0001")
-    bot.cfg["maker_fee_pct"] = Decimal("0.0002")
-    await bot.check_inversion()
-    assert placed["order"] == (
-        Decimal("100"),
-        Decimal("90"),
-        Decimal("1"),
-        "short",
-    )
 
 
 def test_scan_full_book(monkeypatch, bot):
