@@ -335,8 +335,7 @@ class ArbitrageBot:
         except (KeyError, TypeError, decimal.InvalidOperation):
             return
 
-        if q1 != q2:
-            return
+        size = min(q1, q2)
 
         if s1 == "BUY" and s2 == "SELL":
             price_buy, price_sell = p1, p2
@@ -348,13 +347,13 @@ class ArbitrageBot:
         if price_sell <= price_buy:
             return
 
-        long_profit = (price_sell - price_buy) * q1 - (
-            price_buy * q1 * self.cfg.get("taker_fee_pct", Decimal("0"))
-            + price_sell * q1 * self.cfg.get("maker_fee_pct", Decimal("0"))
+        long_profit = (price_sell - price_buy) * size - (
+            price_buy * size * self.cfg.get("taker_fee_pct", Decimal("0"))
+            + price_sell * size * self.cfg.get("maker_fee_pct", Decimal("0"))
         )
-        short_profit = (price_sell - price_buy) * q1 - (
-            price_sell * q1 * self.cfg.get("taker_fee_pct", Decimal("0"))
-            + price_buy * q1 * self.cfg.get("maker_fee_pct", Decimal("0"))
+        short_profit = (price_sell - price_buy) * size - (
+            price_sell * size * self.cfg.get("taker_fee_pct", Decimal("0"))
+            + price_buy * size * self.cfg.get("maker_fee_pct", Decimal("0"))
         )
 
         if long_profit >= short_profit and long_profit >= self.cfg.get("min_profit_usd", Decimal("0")):
@@ -367,7 +366,7 @@ class ArbitrageBot:
             return
 
         signal = (
-            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  {direction.upper()} {q1:.2f}@{price_buy if direction=='long' else price_sell} "
+            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  {direction.upper()} {size:.2f}@{price_buy if direction=='long' else price_sell} "
             f"\u2192 {'SELL' if direction=='long' else 'BUY'}@{price_sell if direction=='long' else price_buy}  \u0394={price_sell - price_buy:.2f}  Net={net:.2f}"
         )
         print(signal)
@@ -377,11 +376,11 @@ class ArbitrageBot:
             await self.handle_order(
                 price_buy=lower_bid,
                 price_sell=higher_ask,
-                size=q1,
+                size=size,
                 direction=direction,
             )
         else:
-            await self.handle_order(price_buy, price_sell, q1, direction)
+            await self.handle_order(price_buy, price_sell, size, direction)
 
     async def handle_order(
         self, price_buy: Decimal, price_sell: Decimal, size: Decimal, direction: str = "long"

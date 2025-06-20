@@ -94,6 +94,7 @@ async def test_scan_inversions_buy_sell(bot, monkeypatch):
         captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    bot.cfg["min_profit_usd"] = Decimal("0")
     inserts = [
         {"side": "BUY", "size": "0.5", "price": "100"},
         {"side": "SELL", "size": "0.5", "price": "101"},
@@ -169,7 +170,12 @@ async def test_scan_inversions_size_mismatch(bot, monkeypatch):
         {"side": "SELL", "size": "1", "price": "2555"},
     ]
     await bot.scan_inversions(inserts)
-    assert not captured
+    assert captured["order"] == (
+        Decimal("2553"),
+        Decimal("2555"),
+        Decimal("1"),
+        "long",
+    )
 
 
 @pytest.mark.asyncio
