@@ -99,6 +99,7 @@ class ArbitrageBot:
         self.open_batches: Dict[str, Dict[str, str]] = {}
         self.has_open_position: bool = False
         self.last_position_pnl: Optional[Decimal] = None
+        self.open_position_price: Optional[Decimal] = None
 
     async def refresh_balance(self) -> None:
         summary = await asyncio.to_thread(
@@ -109,7 +110,7 @@ class ArbitrageBot:
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
 
     async def refresh_positions(self) -> None:
-        """Refresh open position status and last closed PnL."""
+        """Refresh open position status, entry price, and last closed PnL."""
         try:
             data = await asyncio.to_thread(self.paradex.api_client.fetch_positions)
         except Exception as exc:
@@ -117,6 +118,7 @@ class ArbitrageBot:
             return
         results = data.get("results", []) if isinstance(data, dict) else []
         self.has_open_position = False
+        self.open_position_price = None
         latest_time = None
         latest_pnl = None
         for pos in results:
@@ -125,6 +127,17 @@ class ArbitrageBot:
             status = pos.get("status")
             if status == "OPEN":
                 self.has_open_position = True
+                price = (
+                    pos.get("entry_price")
+                    or pos.get("avg_entry_price")
+                    or pos.get("open_price")
+                    or pos.get("price")
+                )
+                try:
+                    if price is not None:
+                        self.open_position_price = Decimal(str(price))
+                except (TypeError, decimal.InvalidOperation):
+                    self.open_position_price = None
                 return
             if status == "CLOSED":
                 closed_at = pos.get("closed_at") or pos.get("last_updated_at")
@@ -194,7 +207,13 @@ class ArbitrageBot:
         if self.best_bid_qty is None or self.best_ask_qty is None:
             return
         if self.has_open_position:
-            self.logger.info("Open position detected, skipping new orders")
+            if self.open_position_price is not None:
+                self.logger.info(
+                    "Open position at %s, skipping new orders",
+                    self.open_position_price,
+                )
+            else:
+                self.logger.info("Open position detected, skipping new orders")
             return
         if self.last_position_pnl is not None and self.last_position_pnl <= 0:
             self.logger.info("Previous position closed without profit")
@@ -260,7 +279,13 @@ class ArbitrageBot:
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
         if self.has_open_position:
-            self.logger.info("Open position detected, skipping new orders")
+            if self.open_position_price is not None:
+                self.logger.info(
+                    "Open position at %s, skipping new orders",
+                    self.open_position_price,
+                )
+            else:
+                self.logger.info("Open position detected, skipping new orders")
             return
         if self.last_position_pnl is not None and self.last_position_pnl <= 0:
             self.logger.info("Previous position closed without profit")
