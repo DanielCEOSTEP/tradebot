@@ -317,7 +317,10 @@ class ArbitrageBot:
             self.logger.warning("Max open orders reached")
             return
         self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
-        await self.place_orders(self.best_ask, self.best_bid, order_size, direction)
+        if direction == "short":
+            await self.place_orders(self.best_bid, self.best_ask, order_size, direction)
+        else:
+            await self.place_orders(self.best_ask, self.best_bid, order_size, direction)
 
     async def scan_inversions(self, inserts) -> None:
         """Check for simple two-order cross spreads regardless of order."""
