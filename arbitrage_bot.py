@@ -389,7 +389,6 @@ class ArbitrageBot:
         self, price_buy: Decimal, price_sell: Decimal, size: Decimal, direction: str = "long"
     ) -> None:
         await self.refresh_balance()
-        await self.refresh_positions()
         if self.has_open_position:
             if self.open_position_price is not None:
                 self.logger.info(
