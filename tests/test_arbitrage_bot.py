@@ -86,7 +86,11 @@ async def test_check_inversion_closed_negative(bot, monkeypatch):
 async def test_scan_inversions_buy_sell(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        q = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -107,7 +111,11 @@ async def test_scan_inversions_buy_sell(bot, monkeypatch):
 async def test_scan_inversions_sell_buy(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        q = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -128,7 +136,11 @@ async def test_scan_inversions_sell_buy(bot, monkeypatch):
 async def test_scan_inversions_zero_delta(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        q = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -144,7 +156,11 @@ async def test_scan_inversions_zero_delta(bot, monkeypatch):
 async def test_scan_inversions_size_mismatch(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        q = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -168,7 +184,11 @@ async def test_check_inversion_short_direction(bot, monkeypatch):
 def test_scan_full_book(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, pb, ps, size, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        size = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -187,7 +207,11 @@ def test_scan_full_book(monkeypatch, bot):
 def test_scan_full_book_short(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, pb, ps, size, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        size = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
@@ -206,7 +230,11 @@ def test_scan_full_book_short(monkeypatch, bot):
 def test_scan_full_book_profit_filter(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, pb, ps, size, direction="long"):
+    async def fake_handle(self, *args, **kwargs):
+        pb = kwargs.get("price_buy", args[0] if len(args) > 0 else None)
+        ps = kwargs.get("price_sell", args[1] if len(args) > 1 else None)
+        size = kwargs.get("size", args[2] if len(args) > 2 else None)
+        direction = kwargs.get("direction", args[3] if len(args) > 3 else "long")
         captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
