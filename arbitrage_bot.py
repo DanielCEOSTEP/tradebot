@@ -3,7 +3,7 @@ import logging
 import os
 from decimal import Decimal
 from uuid import uuid4
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 from datetime import datetime
 
 import tomli
@@ -98,7 +98,7 @@ class ArbitrageBot:
         self.available_balance_usd: Decimal = Decimal("0")
         self.open_batches: Dict[str, Dict[str, str]] = {}
         self.has_open_position: bool = False
-        self.last_position_pnl: Optional[Decimal] = None
+        self.open_position_prices: Set[Decimal] = set()
 
     async def refresh_balance(self) -> None:
         summary = await asyncio.to_thread(
@@ -109,34 +109,28 @@ class ArbitrageBot:
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
 
     async def refresh_positions(self) -> None:
-        """Refresh open position status and last closed PnL."""
+        """Refresh open position status and track entry prices of open positions."""
         try:
             data = await asyncio.to_thread(self.paradex.api_client.fetch_positions)
         except Exception as exc:
             self.logger.error("Failed to fetch positions: %s", exc)
             return
         results = data.get("results", []) if isinstance(data, dict) else []
+        self.open_position_prices.clear()
         self.has_open_position = False
-        latest_time = None
-        latest_pnl = None
         for pos in results:
             if pos.get("market") != self.cfg["market"]:
                 continue
             status = pos.get("status")
             if status == "OPEN":
-                self.has_open_position = True
-                return
-            if status == "CLOSED":
-                closed_at = pos.get("closed_at") or pos.get("last_updated_at")
-                if closed_at is not None and (latest_time is None or closed_at > latest_time):
-                    latest_time = closed_at
-                    try:
-                        pnl_str = pos.get("realized_positional_pnl") or "0"
-                        latest_pnl = Decimal(pnl_str)
-                    except (TypeError, decimal.InvalidOperation):
-                        latest_pnl = Decimal("0")
-        if latest_pnl is not None:
-            self.last_position_pnl = latest_pnl
+                price_str = pos.get("average_entry_price") or pos.get("entry_price")
+                try:
+                    price = Decimal(price_str)
+                except (TypeError, decimal.InvalidOperation):
+                    continue
+                self.open_position_prices.add(price)
+        if self.open_position_prices:
+            self.has_open_position = True
 
     async def on_account_update(self, _channel, _message) -> None:
         await self.refresh_balance()
@@ -194,11 +188,11 @@ class ArbitrageBot:
         if self.best_bid_qty is None or self.best_ask_qty is None:
             return
         await self.refresh_positions()
-        if self.has_open_position:
-            self.logger.info("Open position detected, skipping new orders")
-            return
-        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
-            self.logger.info("Previous position closed without profit")
+        if self.has_open_position and self.best_ask in self.open_position_prices:
+            self.logger.info(
+                "Open position at price %s detected, skipping new orders",
+                self.best_ask,
+            )
             return
         order_size = min(self.best_bid_qty, self.best_ask_qty)
         if "order_size" in self.cfg:
@@ -261,11 +255,11 @@ class ArbitrageBot:
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
         await self.refresh_positions()
-        if self.has_open_position:
-            self.logger.info("Open position detected, skipping new orders")
-            return
-        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
-            self.logger.info("Previous position closed without profit")
+        if self.has_open_position and price_buy in self.open_position_prices:
+            self.logger.info(
+                "Open position at price %s detected, skipping new orders",
+                price_buy,
+            )
             return
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
