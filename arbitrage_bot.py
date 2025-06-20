@@ -220,22 +220,36 @@ class ArbitrageBot:
         if "order_size" in self.cfg:
             order_size = min(order_size, self.cfg["order_size"])
         delta = self.best_bid - self.best_ask
-        taker_fee = self.best_ask * order_size * self.cfg["taker_fee_pct"]
-        maker_fee = self.best_bid * order_size * self.cfg["maker_fee_pct"]
-        fees = taker_fee + maker_fee
-        profit = delta * order_size - fees
-        if profit < self.cfg["min_profit_usd"]:
+        long_profit = delta * order_size - (
+            self.best_ask * order_size * self.cfg["taker_fee_pct"]
+            + self.best_bid * order_size * self.cfg["maker_fee_pct"]
+        )
+        short_profit = delta * order_size - (
+            self.best_bid * order_size * self.cfg["taker_fee_pct"]
+            + self.best_ask * order_size * self.cfg["maker_fee_pct"]
+        )
+
+        if long_profit >= short_profit and long_profit >= self.cfg["min_profit_usd"]:
+            direction = "long"
+            profit = long_profit
+        elif short_profit >= self.cfg["min_profit_usd"]:
+            direction = "short"
+            profit = short_profit
+        else:
             return
 
         signal = (
-            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY {order_size:.2f}@{self.best_ask} "
-            f"\u2192 SELL@{self.best_bid}  \u0394={delta:.2f}  Net={profit:.2f}"
+            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  {direction.upper()} "
+            f"{order_size:.2f}@{self.best_ask if direction=='long' else self.best_bid} "
+            f"\u2192 {'SELL' if direction=='long' else 'BUY'}@{self.best_bid if direction=='long' else self.best_ask}  "
+            f"\u0394={delta:.2f}  Net={profit:.2f}"
         )
         print(signal)
 
         await self.refresh_balance()
         leverage = self.cfg.get("leverage", Decimal("1"))
-        margin_needed = (self.best_ask * order_size) / leverage
+        first_price = self.best_ask if direction == "long" else self.best_bid
+        margin_needed = (first_price * order_size) / leverage
         if margin_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
             self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
             return
@@ -243,7 +257,7 @@ class ArbitrageBot:
             self.logger.warning("Max open orders reached")
             return
         self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
-        await self.place_orders(self.best_ask, self.best_bid, order_size)
+        await self.place_orders(self.best_ask, self.best_bid, order_size, direction)
 
     async def scan_inversions(self, inserts) -> None:
         """Check for simple two-order cross spreads regardless of order."""
@@ -274,20 +288,34 @@ class ArbitrageBot:
         if price_sell <= price_buy:
             return
 
-        gross = (price_sell - price_buy) * q1
-        fees = (price_buy * q1 + price_sell * q2) * self.cfg.get("fee_pct", Decimal("0"))
-        net = gross - fees
-        if net < self.cfg.get("min_profit_usd", Decimal("0")):
+        long_profit = (price_sell - price_buy) * q1 - (
+            price_buy * q1 * self.cfg.get("taker_fee_pct", Decimal("0"))
+            + price_sell * q1 * self.cfg.get("maker_fee_pct", Decimal("0"))
+        )
+        short_profit = (price_sell - price_buy) * q1 - (
+            price_sell * q1 * self.cfg.get("taker_fee_pct", Decimal("0"))
+            + price_buy * q1 * self.cfg.get("maker_fee_pct", Decimal("0"))
+        )
+
+        if long_profit >= short_profit and long_profit >= self.cfg.get("min_profit_usd", Decimal("0")):
+            direction = "long"
+            net = long_profit
+        elif short_profit >= self.cfg.get("min_profit_usd", Decimal("0")):
+            direction = "short"
+            net = short_profit
+        else:
             return
 
         signal = (
-            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY{q1:.2f}@{price_buy} "
-            f"\u2192 SELL@{price_sell}  \u0394={price_sell - price_buy:.2f}  Net={net:.2f}"
+            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  {direction.upper()} {q1:.2f}@{price_buy if direction=='long' else price_sell} "
+            f"\u2192 {'SELL' if direction=='long' else 'BUY'}@{price_sell if direction=='long' else price_buy}  \u0394={price_sell - price_buy:.2f}  Net={net:.2f}"
         )
         print(signal)
-        await self.handle_order(price_buy, price_sell, q1)
+        await self.handle_order(price_buy, price_sell, q1, direction)
 
-    async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
+    async def handle_order(
+        self, price_buy: Decimal, price_sell: Decimal, size: Decimal, direction: str = "long"
+    ) -> None:
         await self.refresh_balance()
         await self.refresh_positions()
         if self.has_open_position:
@@ -302,7 +330,8 @@ class ArbitrageBot:
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
         leverage = self.cfg.get("leverage", Decimal("1"))
-        margin_needed = (price_buy * size) / leverage
+        first_price = price_buy if direction == "long" else price_sell
+        margin_needed = (first_price * size) / leverage
         if margin_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
             self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
             return
@@ -310,12 +339,14 @@ class ArbitrageBot:
             self.logger.warning("Max open orders reached")
             return
         self.logger.info("\u0420\u0430\u0437\u043c\u0435\u0449\u0430\u044e \u043e\u0440\u0434\u0435\u0440\u0430")
-        await self.place_orders(price_buy, price_sell, size)
+        await self.place_orders(price_buy, price_sell, size, direction)
 
-    async def place_orders(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
+    async def place_orders(
+        self, price_buy: Decimal, price_sell: Decimal, size: Decimal, direction: str = "long"
+    ) -> None:
         batch_id = str(uuid4())
-        orders = [
-            Order(
+        if direction == "long":
+            order_buy = Order(
                 market=self.cfg["market"],
                 order_type=OrderType.Limit,
                 order_side=OrderSide.Buy,
@@ -323,8 +354,8 @@ class ArbitrageBot:
                 limit_price=price_buy,
                 client_id=f"{batch_id}-buy",
                 instruction="GTC",
-            ),
-            Order(
+            )
+            order_sell = Order(
                 market=self.cfg["market"],
                 order_type=OrderType.Limit,
                 order_side=OrderSide.Sell,
@@ -332,19 +363,47 @@ class ArbitrageBot:
                 limit_price=price_sell,
                 client_id=f"{batch_id}-sell",
                 instruction="GTC",
-            ),
-        ]
+            )
+            orders = [order_buy, order_sell]
+        else:
+            order_sell = Order(
+                market=self.cfg["market"],
+                order_type=OrderType.Limit,
+                order_side=OrderSide.Sell,
+                size=size,
+                limit_price=price_sell,
+                client_id=f"{batch_id}-sell",
+                instruction="GTC",
+            )
+            order_buy = Order(
+                market=self.cfg["market"],
+                order_type=OrderType.Limit,
+                order_side=OrderSide.Buy,
+                size=size,
+                limit_price=price_buy,
+                client_id=f"{batch_id}-buy",
+                instruction="GTC",
+            )
+            orders = [order_sell, order_buy]
         try:
             await asyncio.to_thread(
                 self.paradex.api_client.submit_orders_batch, orders
             )
-            self.open_batches[batch_id] = {"buy": orders[0].client_id, "sell": orders[1].client_id}
-            self.logger.info(
-                "\u0420\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u044b \u043e\u0440\u0434\u0435\u0440\u0430: BUY %s @ %s \u2192 SELL @ %s",
-                size,
-                price_buy,
-                price_sell,
-            )
+            self.open_batches[batch_id] = {"buy": order_buy.client_id, "sell": order_sell.client_id}
+            if direction == "long":
+                self.logger.info(
+                    "\u0420\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u044b \u043e\u0440\u0434\u0435\u0440\u0430: BUY %s @ %s \u2192 SELL @ %s",
+                    size,
+                    price_buy,
+                    price_sell,
+                )
+            else:
+                self.logger.info(
+                    "\u0420\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u044b \u043e\u0440\u0434\u0435\u0440\u0430: SELL %s @ %s \u2192 BUY @ %s",
+                    size,
+                    price_sell,
+                    price_buy,
+                )
         except Exception as exc:
             self.logger.error("Failed to submit orders: %s", exc)
 
