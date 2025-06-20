@@ -168,8 +168,8 @@ async def test_check_inversion_short_direction(bot, monkeypatch):
 def test_scan_full_book(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
-        captured["order"] = (ask_price, bid_price, size, direction)
+    async def fake_handle(self, pb, ps, size, direction="long"):
+        captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     bot.cfg["min_profit"] = Decimal("1")
@@ -187,8 +187,8 @@ def test_scan_full_book(monkeypatch, bot):
 def test_scan_full_book_short(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
-        captured["order"] = (ask_price, bid_price, size, direction)
+    async def fake_handle(self, pb, ps, size, direction="long"):
+        captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     bot.cfg["min_profit"] = Decimal("1")
@@ -196,8 +196,8 @@ def test_scan_full_book_short(monkeypatch, bot):
     asks = [["102", "1"]]
     asyncio.run(bot.scan_full_book(bids, asks))
     assert captured["order"] == (
-        Decimal("102"),
         Decimal("100"),
+        Decimal("102"),
         Decimal("1"),
         "short",
     )
@@ -206,8 +206,8 @@ def test_scan_full_book_short(monkeypatch, bot):
 def test_scan_full_book_profit_filter(monkeypatch, bot):
     captured = {}
 
-    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
-        captured["order"] = (ask_price, bid_price, size, direction)
+    async def fake_handle(self, pb, ps, size, direction="long"):
+        captured["order"] = (pb, ps, size, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     bot.cfg["min_profit"] = Decimal("0")

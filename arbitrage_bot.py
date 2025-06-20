@@ -251,7 +251,7 @@ class ArbitrageBot:
                     await self.handle_order(ask_price, bid_price, size, "long")
                     return
                 elif ask_price >= bid_price + min_profit and profit_short_ok:
-                    await self.handle_order(ask_price, bid_price, size, "short")
+                    await self.handle_order(bid_price, ask_price, size, "short")
                     return
 
     async def check_inversion(self) -> None:
