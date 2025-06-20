@@ -220,7 +220,6 @@ class ArbitrageBot:
         """Scan the entire order book for price inversions."""
         if not bids or not asks:
             return
-        await self.refresh_positions()
         if self.has_open_position:
             return
         min_profit = self.cfg.get("min_profit", Decimal("0"))
@@ -233,11 +232,26 @@ class ArbitrageBot:
                     ask_size = Decimal(ask[1])
                 except (IndexError, TypeError, decimal.InvalidOperation):
                     continue
-                if bid_size != ask_size:
-                    continue
-                if bid_price >= ask_price + min_profit:
-                    size = min(bid_size, ask_size)
+                size = min(bid_size, ask_size)
+                taker_fee = self.cfg["taker_fee_pct"]
+                maker_fee = self.cfg["maker_fee_pct"]
+                long_profit = (
+                    (bid_price - ask_price) * size
+                    - ask_price * size * taker_fee
+                    - bid_price * size * maker_fee
+                )
+                short_profit = (
+                    (ask_price - bid_price) * size
+                    - bid_price * size * taker_fee
+                    - ask_price * size * maker_fee
+                )
+                profit_long_ok = long_profit >= self.cfg["min_profit_usd"]
+                profit_short_ok = short_profit >= self.cfg["min_profit_usd"]
+                if bid_price >= ask_price + min_profit and profit_long_ok:
                     await self.handle_order(ask_price, bid_price, size, "long")
+                    return
+                elif ask_price >= bid_price + min_profit and profit_short_ok:
+                    await self.handle_order(ask_price, bid_price, size, "short")
                     return
 
     async def check_inversion(self) -> None:

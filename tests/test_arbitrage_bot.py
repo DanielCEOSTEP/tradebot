@@ -182,3 +182,37 @@ def test_scan_full_book(monkeypatch, bot):
         Decimal("1"),
         "long",
     )
+
+
+def test_scan_full_book_short(monkeypatch, bot):
+    captured = {}
+
+    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
+        captured["order"] = (ask_price, bid_price, size, direction)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    bot.cfg["min_profit"] = Decimal("1")
+    bids = [["100", "1"]]
+    asks = [["102", "1"]]
+    asyncio.run(bot.scan_full_book(bids, asks))
+    assert captured["order"] == (
+        Decimal("102"),
+        Decimal("100"),
+        Decimal("1"),
+        "short",
+    )
+
+
+def test_scan_full_book_profit_filter(monkeypatch, bot):
+    captured = {}
+
+    async def fake_handle(self, ask_price, bid_price, size, direction="long"):
+        captured["order"] = (ask_price, bid_price, size, direction)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    bot.cfg["min_profit"] = Decimal("0")
+    bot.cfg["min_profit_usd"] = Decimal("10")
+    bids = [["102", "1"]]
+    asks = [["100", "1"]]
+    asyncio.run(bot.scan_full_book(bids, asks))
+    assert not captured
