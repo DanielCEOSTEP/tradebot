@@ -184,7 +184,12 @@ async def test_check_inversion_short_direction(bot, monkeypatch):
     bot.cfg["taker_fee_pct"] = Decimal("0.0001")
     bot.cfg["maker_fee_pct"] = Decimal("0.0002")
     await bot.check_inversion()
-    assert placed["order"][3] == "short"
+    assert placed["order"] == (
+        Decimal("100"),
+        Decimal("90"),
+        Decimal("1"),
+        "short",
+    )
 
 
 def test_scan_full_book(monkeypatch, bot):
