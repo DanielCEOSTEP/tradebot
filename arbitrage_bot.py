@@ -301,7 +301,9 @@ class ArbitrageBot:
             ),
         ]
         try:
-            self.paradex.api_client.submit_orders_batch(orders)
+            await asyncio.to_thread(
+                self.paradex.api_client.submit_orders_batch, orders
+            )
             self.open_batches[batch_id] = {"buy": orders[0].client_id, "sell": orders[1].client_id}
             self.logger.info(
                 "\u0420\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u044b \u043e\u0440\u0434\u0435\u0440\u0430: BUY %s @ %s \u2192 SELL @ %s",
