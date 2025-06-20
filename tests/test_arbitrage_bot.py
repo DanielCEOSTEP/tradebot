@@ -80,3 +80,75 @@ async def test_check_inversion_closed_negative(bot, monkeypatch):
     placed = await prepare_bot(bot, positions, monkeypatch)
     await bot.check_inversion()
     assert placed
+
+
+@pytest.mark.asyncio
+async def test_scan_inversions_buy_sell(bot, monkeypatch):
+    captured = {}
+
+    async def fake_handle(self, pb, ps, q):
+        captured["order"] = (pb, ps, q)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    inserts = [
+        {"side": "BUY", "size": "0.5", "price": "100"},
+        {"side": "SELL", "size": "0.5", "price": "101"},
+    ]
+    await bot.scan_inversions(inserts)
+    assert captured["order"] == (
+        Decimal("100"),
+        Decimal("101"),
+        Decimal("0.5"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_scan_inversions_sell_buy(bot, monkeypatch):
+    captured = {}
+
+    async def fake_handle(self, pb, ps, q):
+        captured["order"] = (pb, ps, q)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    inserts = [
+        {"side": "SELL", "size": "1", "price": "2554"},
+        {"side": "BUY", "size": "1", "price": "2551"},
+    ]
+    await bot.scan_inversions(inserts)
+    assert captured["order"] == (
+        Decimal("2551"),
+        Decimal("2554"),
+        Decimal("1"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_scan_inversions_zero_delta(bot, monkeypatch):
+    captured = {}
+
+    async def fake_handle(self, pb, ps, q):
+        captured["order"] = (pb, ps, q)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    inserts = [
+        {"side": "SELL", "size": "1", "price": "2551"},
+        {"side": "BUY", "size": "1", "price": "2551"},
+    ]
+    await bot.scan_inversions(inserts)
+    assert not captured
+
+
+@pytest.mark.asyncio
+async def test_scan_inversions_size_mismatch(bot, monkeypatch):
+    captured = {}
+
+    async def fake_handle(self, pb, ps, q):
+        captured["order"] = (pb, ps, q)
+
+    monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
+    inserts = [
+        {"side": "BUY", "size": "2", "price": "2553"},
+        {"side": "SELL", "size": "1", "price": "2555"},
+    ]
+    await bot.scan_inversions(inserts)
+    assert not captured
