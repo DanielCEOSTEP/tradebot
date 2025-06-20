@@ -24,7 +24,6 @@ ENV_MAP = {
     "PARADEX_ORDER_SIZE": "order_size",  # optional max order size
     "PARADEX_LEVERAGE": "leverage",  # optional leverage factor
     "PARADEX_MIN_PROFIT_USD": "min_profit_usd",
-    "PARADEX_FEE_PCT": "fee_pct",
     "PARADEX_TAKER_FEE_PCT": "taker_fee_pct",
     "PARADEX_MAKER_FEE_PCT": "maker_fee_pct",
     "PARADEX_MAX_OPEN_ORDERS": "max_open_orders",
@@ -49,26 +48,38 @@ def load_config(config_path: Optional[str] = None) -> Dict:
     for env, key in ENV_MAP.items():
         if os.getenv(env) is not None:
             cfg[key] = os.getenv(env)
+
+    # Backwards compatibility: if legacy PARADEX_FEE_PCT is provided and
+    # taker/maker fees are not explicitly set, use it as a fallback value.
+    fee_pct_env = os.getenv("PARADEX_FEE_PCT")
+    if fee_pct_env is not None:
+        cfg.setdefault("taker_fee_pct", fee_pct_env)
+        cfg.setdefault("maker_fee_pct", fee_pct_env)
     cfg.setdefault("env", "testnet")
     for k in [
         "order_size",
         "min_profit_usd",
-        "fee_pct",
         "taker_fee_pct",
         "maker_fee_pct",
         "leverage",
+        "fee_pct",
     ]:
         if k in cfg:
             cfg[k] = Decimal(cfg[k])
+
+    # Fallback from config file for legacy fee_pct option
+    if "fee_pct" in cfg:
+        cfg.setdefault("taker_fee_pct", cfg["fee_pct"])
+        cfg.setdefault("maker_fee_pct", cfg["fee_pct"])
+        cfg.pop("fee_pct")
     cfg["max_open_orders"] = int(cfg.get("max_open_orders", 1))
     cfg["balance_reserved_pct"] = float(cfg.get("balance_reserved_pct", 1.0))
     cfg["poll_interval_ms"] = int(cfg.get("poll_interval_ms", 1000))
     cfg["balance_refresh_sec"] = int(cfg.get("balance_refresh_sec", 30))
     cfg.setdefault("min_profit_usd", Decimal("1"))
     cfg.setdefault("leverage", Decimal("1"))
-    cfg.setdefault("taker_fee_pct", Decimal("0.0002"))
-    cfg.setdefault("maker_fee_pct", Decimal("-0.0001"))
-    cfg.setdefault("fee_pct", Decimal("0.001"))
+    cfg.setdefault("taker_fee_pct", Decimal("0.0003"))
+    cfg.setdefault("maker_fee_pct", Decimal("-0.00005"))
     cfg.setdefault("log_level", "INFO")
     required = ["l1_address", "market"]
     missing = [r for r in required if r not in cfg]
