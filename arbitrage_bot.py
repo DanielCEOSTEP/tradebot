@@ -237,7 +237,7 @@ class ArbitrageBot:
                 size=size,
                 limit_price=price_buy,
                 client_id=f"{batch_id}-buy",
-                time_in_force="GTC",
+                instruction="GTC",
             ),
             Order(
                 market=self.cfg["market"],
@@ -246,7 +246,7 @@ class ArbitrageBot:
                 size=size,
                 limit_price=price_sell,
                 client_id=f"{batch_id}-sell",
-                post_only=True,
+                instruction="POST_ONLY",
             ),
         ]
         try:
