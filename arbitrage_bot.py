@@ -97,6 +97,8 @@ class ArbitrageBot:
         self.best_ask_qty: Optional[Decimal] = None
         self.available_balance_usd: Decimal = Decimal("0")
         self.open_batches: Dict[str, Dict[str, str]] = {}
+        self.has_open_position: bool = False
+        self.last_position_pnl: Optional[Decimal] = None
 
     async def refresh_balance(self) -> None:
         summary = await asyncio.to_thread(
@@ -106,8 +108,39 @@ class ArbitrageBot:
             self.available_balance_usd = Decimal(summary.free_collateral)
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
 
+    async def refresh_positions(self) -> None:
+        """Refresh open position status and last closed PnL."""
+        try:
+            data = await asyncio.to_thread(self.paradex.api_client.fetch_positions)
+        except Exception as exc:
+            self.logger.error("Failed to fetch positions: %s", exc)
+            return
+        results = data.get("results", []) if isinstance(data, dict) else []
+        self.has_open_position = False
+        latest_time = None
+        latest_pnl = None
+        for pos in results:
+            if pos.get("market") != self.cfg["market"]:
+                continue
+            status = pos.get("status")
+            if status == "OPEN":
+                self.has_open_position = True
+                return
+            if status == "CLOSED":
+                closed_at = pos.get("closed_at") or pos.get("last_updated_at")
+                if closed_at is not None and (latest_time is None or closed_at > latest_time):
+                    latest_time = closed_at
+                    try:
+                        pnl_str = pos.get("realized_positional_pnl") or "0"
+                        latest_pnl = Decimal(pnl_str)
+                    except (TypeError, decimal.InvalidOperation):
+                        latest_pnl = Decimal("0")
+        if latest_pnl is not None:
+            self.last_position_pnl = latest_pnl
+
     async def on_account_update(self, _channel, _message) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
 
     async def on_order_update(self, _channel, message) -> None:
         data = message.get("params", {}).get("data", {})
@@ -117,6 +150,7 @@ class ArbitrageBot:
             if client_id in ids.values() and status in {"FILLED", "CANCELLED"}:
                 del self.open_batches[batch_id]
                 self.logger.info("Order %s %s", client_id, status)
+        await self.refresh_positions()
 
     async def on_order_book(self, _channel, message) -> None:
         # Avoid logging the entire order book message to prevent flooding the
@@ -158,6 +192,13 @@ class ArbitrageBot:
         if self.best_bid is None or self.best_ask is None:
             return
         if self.best_bid_qty is None or self.best_ask_qty is None:
+            return
+        await self.refresh_positions()
+        if self.has_open_position:
+            self.logger.info("Open position detected, skipping new orders")
+            return
+        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
+            self.logger.info("Previous position closed without profit")
             return
         order_size = min(self.best_bid_qty, self.best_ask_qty)
         if "order_size" in self.cfg:
@@ -219,6 +260,13 @@ class ArbitrageBot:
 
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
+        if self.has_open_position:
+            self.logger.info("Open position detected, skipping new orders")
+            return
+        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
+            self.logger.info("Previous position closed without profit")
+            return
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
         leverage = self.cfg.get("leverage", Decimal("1"))
@@ -269,10 +317,12 @@ class ArbitrageBot:
     async def balance_refresher(self) -> None:
         while True:
             await self.refresh_balance()
+            await self.refresh_positions()
             await asyncio.sleep(self.cfg["balance_refresh_sec"])
 
     async def run(self) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
         await self.paradex.ws_client.connect()
         # Subscribe to the order book snapshot channel with the same pattern as
         # used in ``paradex_bot.py``. This channel streams updates every 50ms
