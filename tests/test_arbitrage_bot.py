@@ -48,8 +48,8 @@ async def prepare_bot(bot, positions, monkeypatch):
     bot.best_ask = Decimal("90")
     bot.best_ask_qty = Decimal("1")
     placed = {}
-    async def fake_place_orders(self, ask, bid, size):
-        placed["order"] = (ask, bid, size)
+    async def fake_place_orders(self, ask, bid, size, direction="long"):
+        placed["order"] = (ask, bid, size, direction)
     monkeypatch.setattr(bot, "place_orders", fake_place_orders.__get__(bot))
     await bot.refresh_positions()
     return placed
@@ -58,7 +58,7 @@ async def prepare_bot(bot, positions, monkeypatch):
 async def test_check_inversion_no_open(bot, monkeypatch):
     placed = await prepare_bot(bot, {"results": []}, monkeypatch)
     await bot.check_inversion()
-    assert placed
+    assert placed["order"][3] == "long"
 
 @pytest.mark.asyncio
 async def test_check_inversion_open_position(bot, monkeypatch):
@@ -72,22 +72,22 @@ async def test_check_inversion_closed_positive(bot, monkeypatch):
     positions = {"results": [{"market": "ETH-USD-PERP", "status": "CLOSED", "closed_at": 1, "realized_positional_pnl": "5"}]}
     placed = await prepare_bot(bot, positions, monkeypatch)
     await bot.check_inversion()
-    assert placed
+    assert placed["order"][3] == "long"
 
 @pytest.mark.asyncio
 async def test_check_inversion_closed_negative(bot, monkeypatch):
     positions = {"results": [{"market": "ETH-USD-PERP", "status": "CLOSED", "closed_at": 1, "realized_positional_pnl": "-1"}]}
     placed = await prepare_bot(bot, positions, monkeypatch)
     await bot.check_inversion()
-    assert placed
+    assert placed["order"][3] == "long"
 
 
 @pytest.mark.asyncio
 async def test_scan_inversions_buy_sell(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q):
-        captured["order"] = (pb, ps, q)
+    async def fake_handle(self, pb, ps, q, direction="long"):
+        captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     inserts = [
@@ -99,6 +99,7 @@ async def test_scan_inversions_buy_sell(bot, monkeypatch):
         Decimal("100"),
         Decimal("101"),
         Decimal("0.5"),
+        "long",
     )
 
 
@@ -106,8 +107,8 @@ async def test_scan_inversions_buy_sell(bot, monkeypatch):
 async def test_scan_inversions_sell_buy(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q):
-        captured["order"] = (pb, ps, q)
+    async def fake_handle(self, pb, ps, q, direction="long"):
+        captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     inserts = [
@@ -119,6 +120,7 @@ async def test_scan_inversions_sell_buy(bot, monkeypatch):
         Decimal("2551"),
         Decimal("2554"),
         Decimal("1"),
+        "long",
     )
 
 
@@ -126,8 +128,8 @@ async def test_scan_inversions_sell_buy(bot, monkeypatch):
 async def test_scan_inversions_zero_delta(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q):
-        captured["order"] = (pb, ps, q)
+    async def fake_handle(self, pb, ps, q, direction="long"):
+        captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     inserts = [
@@ -142,8 +144,8 @@ async def test_scan_inversions_zero_delta(bot, monkeypatch):
 async def test_scan_inversions_size_mismatch(bot, monkeypatch):
     captured = {}
 
-    async def fake_handle(self, pb, ps, q):
-        captured["order"] = (pb, ps, q)
+    async def fake_handle(self, pb, ps, q, direction="long"):
+        captured["order"] = (pb, ps, q, direction)
 
     monkeypatch.setattr(bot, "handle_order", fake_handle.__get__(bot))
     inserts = [
@@ -152,3 +154,12 @@ async def test_scan_inversions_size_mismatch(bot, monkeypatch):
     ]
     await bot.scan_inversions(inserts)
     assert not captured
+
+
+@pytest.mark.asyncio
+async def test_check_inversion_short_direction(bot, monkeypatch):
+    placed = await prepare_bot(bot, {"results": []}, monkeypatch)
+    bot.cfg["taker_fee_pct"] = Decimal("0.0001")
+    bot.cfg["maker_fee_pct"] = Decimal("0.0002")
+    await bot.check_inversion()
+    assert placed["order"][3] == "short"
