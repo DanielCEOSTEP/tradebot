@@ -251,7 +251,14 @@ class ArbitrageBot:
                     await self.handle_order(ask_price, bid_price, size, "long")
                     return
                 elif ask_price >= bid_price + min_profit and profit_short_ok:
-                    await self.handle_order(bid_price, ask_price, size, "short")
+                    lower_bid = bid_price
+                    higher_ask = ask_price
+                    await self.handle_order(
+                        price_buy=lower_bid,
+                        price_sell=higher_ask,
+                        size=size,
+                        direction="short",
+                    )
                     return
 
     async def check_inversion(self) -> None:
@@ -364,7 +371,17 @@ class ArbitrageBot:
             f"\u2192 {'SELL' if direction=='long' else 'BUY'}@{price_sell if direction=='long' else price_buy}  \u0394={price_sell - price_buy:.2f}  Net={net:.2f}"
         )
         print(signal)
-        await self.handle_order(price_buy, price_sell, q1, direction)
+        if direction == "short":
+            lower_bid = price_buy
+            higher_ask = price_sell
+            await self.handle_order(
+                price_buy=lower_bid,
+                price_sell=higher_ask,
+                size=q1,
+                direction=direction,
+            )
+        else:
+            await self.handle_order(price_buy, price_sell, q1, direction)
 
     async def handle_order(
         self, price_buy: Decimal, price_sell: Decimal, size: Decimal, direction: str = "long"
