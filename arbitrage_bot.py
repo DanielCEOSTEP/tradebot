@@ -22,6 +22,7 @@ ENV_MAP = {
     "PARADEX_L2_PRIVATE_KEY": "l2_private_key",
     "PARADEX_MARKET": "market",
     "PARADEX_ORDER_SIZE": "order_size",  # optional max order size
+    "PARADEX_LEVERAGE": "leverage",  # optional leverage factor
     "PARADEX_MIN_PROFIT_USD": "min_profit_usd",
     "PARADEX_FEE_PCT": "fee_pct",
     "PARADEX_TAKER_FEE_PCT": "taker_fee_pct",
@@ -55,6 +56,7 @@ def load_config(config_path: Optional[str] = None) -> Dict:
         "fee_pct",
         "taker_fee_pct",
         "maker_fee_pct",
+        "leverage",
     ]:
         if k in cfg:
             cfg[k] = Decimal(cfg[k])
@@ -63,6 +65,7 @@ def load_config(config_path: Optional[str] = None) -> Dict:
     cfg["poll_interval_ms"] = int(cfg.get("poll_interval_ms", 1000))
     cfg["balance_refresh_sec"] = int(cfg.get("balance_refresh_sec", 30))
     cfg.setdefault("min_profit_usd", Decimal("1"))
+    cfg.setdefault("leverage", Decimal("1"))
     cfg.setdefault("taker_fee_pct", Decimal("0.0002"))
     cfg.setdefault("maker_fee_pct", Decimal("-0.0001"))
     cfg.setdefault("fee_pct", Decimal("0.001"))
@@ -174,8 +177,9 @@ class ArbitrageBot:
         print(signal)
 
         await self.refresh_balance()
-        usd_needed = self.best_ask * order_size
-        if usd_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
+        leverage = self.cfg.get("leverage", Decimal("1"))
+        margin_needed = (self.best_ask * order_size) / leverage
+        if margin_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
             self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
             return
         if len(self.open_batches) >= self.cfg["max_open_orders"]:
@@ -217,8 +221,9 @@ class ArbitrageBot:
         await self.refresh_balance()
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
-        usd_needed = price_buy * size
-        if usd_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
+        leverage = self.cfg.get("leverage", Decimal("1"))
+        margin_needed = (price_buy * size) / leverage
+        if margin_needed > self.available_balance_usd * Decimal(str(self.cfg["balance_reserved_pct"])):
             self.logger.info("\u041d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043e\u0447\u043d\u043e \u0431\u0430\u043b\u0430\u043d\u0441\u0430")
             return
         if len(self.open_batches) >= self.cfg["max_open_orders"]:
