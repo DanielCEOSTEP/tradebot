@@ -202,6 +202,7 @@ class ArbitrageBot:
             await self.check_inversion()
 
     async def check_inversion(self) -> None:
+        await self.refresh_positions()
         if self.best_bid is None or self.best_ask is None:
             return
         if self.best_bid_qty is None or self.best_ask_qty is None:
@@ -275,6 +276,7 @@ class ArbitrageBot:
 
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
         if self.has_open_position:
             if self.open_position_price is not None:
                 self.logger.info(
