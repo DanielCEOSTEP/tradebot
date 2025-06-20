@@ -251,7 +251,7 @@ class ArbitrageBot:
                 size=size,
                 limit_price=price_sell,
                 client_id=f"{batch_id}-sell",
-                instruction="POST_ONLY",
+                instruction="GTC",
             ),
         ]
         try:
