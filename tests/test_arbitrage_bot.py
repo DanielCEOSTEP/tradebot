@@ -79,4 +79,4 @@ async def test_check_inversion_closed_negative(bot, monkeypatch):
     positions = {"results": [{"market": "ETH-USD-PERP", "status": "CLOSED", "closed_at": 1, "realized_positional_pnl": "-1"}]}
     placed = await prepare_bot(bot, positions, monkeypatch)
     await bot.check_inversion()
-    assert not placed
+    assert placed

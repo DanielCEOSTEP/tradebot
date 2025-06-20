@@ -215,9 +215,6 @@ class ArbitrageBot:
             else:
                 self.logger.info("Open position detected, skipping new orders")
             return
-        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
-            self.logger.info("Previous position closed without profit")
-            return
         order_size = min(self.best_bid_qty, self.best_ask_qty)
         if "order_size" in self.cfg:
             order_size = min(order_size, self.cfg["order_size"])
@@ -286,9 +283,6 @@ class ArbitrageBot:
                 )
             else:
                 self.logger.info("Open position detected, skipping new orders")
-            return
-        if self.last_position_pnl is not None and self.last_position_pnl <= 0:
-            self.logger.info("Previous position closed without profit")
             return
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
