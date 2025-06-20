@@ -246,33 +246,46 @@ class ArbitrageBot:
         await self.place_orders(self.best_ask, self.best_bid, order_size)
 
     async def scan_inversions(self, inserts) -> None:
-        bids = []
-        asks = []
-        for entry in inserts:
-            try:
-                price = Decimal(entry["price"])
-                size = Decimal(entry["size"])
-                side = entry["side"]
-            except (KeyError, TypeError, decimal.InvalidOperation):
-                continue
-            if side == "BUY":
-                bids.append((size, price))
-            elif side == "SELL":
-                asks.append((size, price))
-        for q_b, p_b in bids:
-            for q_a, p_a in asks:
-                if q_b != q_a or p_a <= p_b:
-                    continue
-                gross = (p_a - p_b) * q_b
-                fees = (p_b * q_b + p_a * q_a) * self.cfg.get("fee_pct", Decimal("0"))
-                net = gross - fees
-                if net >= self.cfg.get("min_profit_usd", Decimal("0")):
-                    signal = (
-                        f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY {q_b:.2f}@{p_b} "
-                        f"\u2192 SELL@{p_a}  \u0394={p_a - p_b:.2f}  Net={net:.2f}"
-                    )
-                    print(signal)
-                    await self.handle_order(p_b, p_a, q_b)
+        """Check for simple two-order cross spreads regardless of order."""
+        if len(inserts) < 2:
+            return
+
+        first, second = inserts[0], inserts[1]
+        try:
+            p1 = Decimal(first["price"])
+            q1 = Decimal(first["size"])
+            s1 = first["side"]
+            p2 = Decimal(second["price"])
+            q2 = Decimal(second["size"])
+            s2 = second["side"]
+        except (KeyError, TypeError, decimal.InvalidOperation):
+            return
+
+        if q1 != q2:
+            return
+
+        if s1 == "BUY" and s2 == "SELL":
+            price_buy, price_sell = p1, p2
+        elif s1 == "SELL" and s2 == "BUY":
+            price_buy, price_sell = p2, p1
+        else:
+            return
+
+        if price_sell <= price_buy:
+            return
+
+        gross = (price_sell - price_buy) * q1
+        fees = (price_buy * q1 + price_sell * q2) * self.cfg.get("fee_pct", Decimal("0"))
+        net = gross - fees
+        if net < self.cfg.get("min_profit_usd", Decimal("0")):
+            return
+
+        signal = (
+            f"{datetime.now().strftime('%H:%M:%S')} \U0001F680  BUY{q1:.2f}@{price_buy} "
+            f"\u2192 SELL@{price_sell}  \u0394={price_sell - price_buy:.2f}  Net={net:.2f}"
+        )
+        print(signal)
+        await self.handle_order(price_buy, price_sell, q1)
 
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
