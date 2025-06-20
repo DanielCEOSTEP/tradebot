@@ -3,7 +3,7 @@ import logging
 import os
 from decimal import Decimal
 from uuid import uuid4
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 from datetime import datetime
 
 import tomli
@@ -97,6 +97,8 @@ class ArbitrageBot:
         self.best_ask_qty: Optional[Decimal] = None
         self.available_balance_usd: Decimal = Decimal("0")
         self.open_batches: Dict[str, Dict[str, str]] = {}
+        self.has_open_position: bool = False
+        self.open_position_prices: Set[Decimal] = set()
 
     async def refresh_balance(self) -> None:
         summary = await asyncio.to_thread(
@@ -106,8 +108,33 @@ class ArbitrageBot:
             self.available_balance_usd = Decimal(summary.free_collateral)
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
 
+    async def refresh_positions(self) -> None:
+        """Refresh open position status and track entry prices of open positions."""
+        try:
+            data = await asyncio.to_thread(self.paradex.api_client.fetch_positions)
+        except Exception as exc:
+            self.logger.error("Failed to fetch positions: %s", exc)
+            return
+        results = data.get("results", []) if isinstance(data, dict) else []
+        self.open_position_prices.clear()
+        self.has_open_position = False
+        for pos in results:
+            if pos.get("market") != self.cfg["market"]:
+                continue
+            status = pos.get("status")
+            if status == "OPEN":
+                price_str = pos.get("average_entry_price") or pos.get("entry_price")
+                try:
+                    price = Decimal(price_str)
+                except (TypeError, decimal.InvalidOperation):
+                    continue
+                self.open_position_prices.add(price)
+        if self.open_position_prices:
+            self.has_open_position = True
+
     async def on_account_update(self, _channel, _message) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
 
     async def on_order_update(self, _channel, message) -> None:
         data = message.get("params", {}).get("data", {})
@@ -117,6 +144,7 @@ class ArbitrageBot:
             if client_id in ids.values() and status in {"FILLED", "CANCELLED"}:
                 del self.open_batches[batch_id]
                 self.logger.info("Order %s %s", client_id, status)
+        await self.refresh_positions()
 
     async def on_order_book(self, _channel, message) -> None:
         # Avoid logging the entire order book message to prevent flooding the
@@ -158,6 +186,13 @@ class ArbitrageBot:
         if self.best_bid is None or self.best_ask is None:
             return
         if self.best_bid_qty is None or self.best_ask_qty is None:
+            return
+        await self.refresh_positions()
+        if self.has_open_position and self.best_ask in self.open_position_prices:
+            self.logger.info(
+                "Open position at price %s detected, skipping new orders",
+                self.best_ask,
+            )
             return
         order_size = min(self.best_bid_qty, self.best_ask_qty)
         if "order_size" in self.cfg:
@@ -219,6 +254,13 @@ class ArbitrageBot:
 
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
+        if self.has_open_position and price_buy in self.open_position_prices:
+            self.logger.info(
+                "Open position at price %s detected, skipping new orders",
+                price_buy,
+            )
+            return
         if "order_size" in self.cfg:
             size = min(size, self.cfg["order_size"])
         leverage = self.cfg.get("leverage", Decimal("1"))
@@ -269,10 +311,12 @@ class ArbitrageBot:
     async def balance_refresher(self) -> None:
         while True:
             await self.refresh_balance()
+            await self.refresh_positions()
             await asyncio.sleep(self.cfg["balance_refresh_sec"])
 
     async def run(self) -> None:
         await self.refresh_balance()
+        await self.refresh_positions()
         await self.paradex.ws_client.connect()
         # Subscribe to the order book snapshot channel with the same pattern as
         # used in ``paradex_bot.py``. This channel streams updates every 50ms
