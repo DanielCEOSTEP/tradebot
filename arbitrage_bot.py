@@ -193,7 +193,6 @@ class ArbitrageBot:
             return
         if self.best_bid_qty is None or self.best_ask_qty is None:
             return
-        await self.refresh_positions()
         if self.has_open_position:
             self.logger.info("Open position detected, skipping new orders")
             return
@@ -260,7 +259,6 @@ class ArbitrageBot:
 
     async def handle_order(self, price_buy: Decimal, price_sell: Decimal, size: Decimal) -> None:
         await self.refresh_balance()
-        await self.refresh_positions()
         if self.has_open_position:
             self.logger.info("Open position detected, skipping new orders")
             return
