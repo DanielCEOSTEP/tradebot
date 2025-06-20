@@ -3,7 +3,7 @@ import logging
 import os
 from decimal import Decimal
 from uuid import uuid4
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Tuple
 from datetime import datetime
 
 import tomli
@@ -99,6 +99,7 @@ class ArbitrageBot:
         self.open_batches: Dict[str, Dict[str, str]] = {}
         self.has_open_position: bool = False
         self.open_position_prices: Set[Decimal] = set()
+        self.last_closed_pnl: Dict[Decimal, Decimal] = {}
 
     async def refresh_balance(self) -> None:
         summary = await asyncio.to_thread(
@@ -109,7 +110,7 @@ class ArbitrageBot:
         self.logger.debug("Balance refreshed: %s", self.available_balance_usd)
 
     async def refresh_positions(self) -> None:
-        """Refresh open position status and track entry prices of open positions."""
+        """Refresh open position status and track PnL by entry price."""
         try:
             data = await asyncio.to_thread(self.paradex.api_client.fetch_positions)
         except Exception as exc:
@@ -117,18 +118,28 @@ class ArbitrageBot:
             return
         results = data.get("results", []) if isinstance(data, dict) else []
         self.open_position_prices.clear()
+        closed_info: Dict[Decimal, Tuple[Decimal, int]] = {}
         self.has_open_position = False
         for pos in results:
             if pos.get("market") != self.cfg["market"]:
                 continue
             status = pos.get("status")
+            price_str = pos.get("average_entry_price") or pos.get("entry_price")
+            try:
+                price = Decimal(price_str)
+            except (TypeError, decimal.InvalidOperation):
+                continue
             if status == "OPEN":
-                price_str = pos.get("average_entry_price") or pos.get("entry_price")
-                try:
-                    price = Decimal(price_str)
-                except (TypeError, decimal.InvalidOperation):
-                    continue
                 self.open_position_prices.add(price)
+            elif status == "CLOSED":
+                closed_at = pos.get("closed_at") or pos.get("last_updated_at") or 0
+                try:
+                    pnl = Decimal(pos.get("realized_positional_pnl") or "0")
+                except (TypeError, decimal.InvalidOperation):
+                    pnl = Decimal("0")
+                if price not in closed_info or closed_at > closed_info[price][1]:
+                    closed_info[price] = (pnl, closed_at)
+        self.last_closed_pnl = {p: info[0] for p, info in closed_info.items()}
         if self.open_position_prices:
             self.has_open_position = True
 
@@ -191,6 +202,13 @@ class ArbitrageBot:
         if self.has_open_position and self.best_ask in self.open_position_prices:
             self.logger.info(
                 "Open position at price %s detected, skipping new orders",
+                self.best_ask,
+            )
+            return
+        last_pnl = self.last_closed_pnl.get(self.best_ask)
+        if last_pnl is not None and last_pnl <= 0:
+            self.logger.info(
+                "Previous position at price %s closed without profit",
                 self.best_ask,
             )
             return
@@ -258,6 +276,13 @@ class ArbitrageBot:
         if self.has_open_position and price_buy in self.open_position_prices:
             self.logger.info(
                 "Open position at price %s detected, skipping new orders",
+                price_buy,
+            )
+            return
+        last_pnl = self.last_closed_pnl.get(price_buy)
+        if last_pnl is not None and last_pnl <= 0:
+            self.logger.info(
+                "Previous position at price %s closed without profit",
                 price_buy,
             )
             return
