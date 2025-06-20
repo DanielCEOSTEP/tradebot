@@ -13,6 +13,7 @@ PARADEX_L1_PRIVATE_KEY=...
 # or alternatively
 PARADEX_L2_PRIVATE_KEY=...
 PARADEX_LEVERAGE=30            # optional leverage for arbitrage_bot
+PARADEX_MIN_PROFIT=1           # minimum price difference for arbitrage
 ```
 
 ### Install dependencies

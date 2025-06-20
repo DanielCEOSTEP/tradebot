@@ -24,6 +24,7 @@ ENV_MAP = {
     "PARADEX_ORDER_SIZE": "order_size",  # optional max order size
     "PARADEX_LEVERAGE": "leverage",  # optional leverage factor
     "PARADEX_MIN_PROFIT_USD": "min_profit_usd",
+    "PARADEX_MIN_PROFIT": "min_profit",
     "PARADEX_TAKER_FEE_PCT": "taker_fee_pct",
     "PARADEX_MAKER_FEE_PCT": "maker_fee_pct",
     "PARADEX_MAX_OPEN_ORDERS": "max_open_orders",
@@ -59,6 +60,7 @@ def load_config(config_path: Optional[str] = None) -> Dict:
     for k in [
         "order_size",
         "min_profit_usd",
+        "min_profit",
         "taker_fee_pct",
         "maker_fee_pct",
         "leverage",
@@ -77,6 +79,7 @@ def load_config(config_path: Optional[str] = None) -> Dict:
     cfg["poll_interval_ms"] = int(cfg.get("poll_interval_ms", 1000))
     cfg["balance_refresh_sec"] = int(cfg.get("balance_refresh_sec", 30))
     cfg.setdefault("min_profit_usd", Decimal("1"))
+    cfg.setdefault("min_profit", Decimal("0"))
     cfg.setdefault("leverage", Decimal("1"))
     cfg.setdefault("taker_fee_pct", Decimal("0.0003"))
     cfg.setdefault("maker_fee_pct", Decimal("-0.00005"))
@@ -188,6 +191,7 @@ class ArbitrageBot:
             self.best_bid_qty = Decimal(bids[0][1])
             self.best_ask = Decimal(asks[0][0])
             self.best_ask_qty = Decimal(asks[0][1])
+            await self.scan_full_book(bids, asks)
             await self.check_inversion()
 
         inserts = data.get("inserts", [])
@@ -211,6 +215,30 @@ class ArbitrageBot:
 
         if self.best_bid is not None and self.best_ask is not None:
             await self.check_inversion()
+
+    async def scan_full_book(self, bids, asks) -> None:
+        """Scan the entire order book for price inversions."""
+        if not bids or not asks:
+            return
+        await self.refresh_positions()
+        if self.has_open_position:
+            return
+        min_profit = self.cfg.get("min_profit", Decimal("0"))
+        for bid in bids:
+            for ask in asks:
+                try:
+                    bid_price = Decimal(bid[0])
+                    bid_size = Decimal(bid[1])
+                    ask_price = Decimal(ask[0])
+                    ask_size = Decimal(ask[1])
+                except (IndexError, TypeError, decimal.InvalidOperation):
+                    continue
+                if bid_size != ask_size:
+                    continue
+                if bid_price >= ask_price + min_profit:
+                    size = min(bid_size, ask_size)
+                    await self.handle_order(ask_price, bid_price, size, "long")
+                    return
 
     async def check_inversion(self) -> None:
         await self.refresh_positions()
